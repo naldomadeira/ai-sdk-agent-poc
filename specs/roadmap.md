@@ -152,3 +152,18 @@ permitida ao usuário e sem aprovação (`cancelOrder`). Opções em evaluation.
 - Aprovação via MCP (elicitation) para expor capabilities sensíveis a outros agentes.
 - Workflows duráveis (`WorkflowAgent` / Vercel Workflow) quando houver espera longa ou retries.
 - Exportar o audit log para OpenTelemetry (`telemetry` do AI SDK).
+
+## Fase 13 — Agent Core Extraction ✅
+
+A Fase 13 extraiu o contrato arquitetural comum demonstrado pelas duas POCs, sem introduzir uma terceira implementação de runtime.
+
+- [x] Fronteira Agent Core/runtime documentada em `specs/phase-13-agent-core-extraction.md`.
+- [x] Contrato conceitual v0.1 em `specs/agent-core-contract.md`.
+- [x] Capability, Registry e Executor identificados como abstrações comuns.
+- [x] Actor/context, autorização, aprovação e auditoria definidos como infraestrutura independente do runtime.
+- [x] Read, domain action e workflow capabilities diferenciadas.
+- [x] Responsabilidades específicas do AI SDK mantidas no adapter/runtime.
+- [x] Regras de segurança documentadas como invariantes da aplicação, não do prompt.
+- [x] Nenhuma mudança funcional na POC.
+
+A extração deliberadamente permanece como contrato/documentação. Um pacote compartilhado só deve ser criado depois de validar o contrato em uma terceira aplicação real, evitando abstração prematura.
