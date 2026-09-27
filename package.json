@@ -19,7 +19,9 @@
     "db:reset": "tsx scripts/db.ts reset",
     "mcp": "tsx scripts/mcp-server.ts",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
-    "smoke": "tsx scripts/smoke-agent.ts"
+    "smoke": "tsx scripts/smoke-agent.ts",
+    "eval": "tsx scripts/eval.ts",
+    "eval:real": "tsx scripts/eval.ts --real"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.65",

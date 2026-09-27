@@ -26,3 +26,11 @@ Use workflow quando a sequência é conhecida, o resultado precisa ser reproduz�
 - O texto das notificações não vem do LLM: previsível, revisável, testável.
 - Sem engine de workflow durável. Quando houver esperas longas, retries ou agendamento, migrar para
   `WorkflowAgent`/Vercel Workflow mantendo as mesmas capabilities.
+
+## Adendo — Fase 12 (2026-09-27)
+
+A idempotência era **por execução** (a mesma `workflow_run` não envia duas vezes), mas não **por evento**:
+rodar o workflow de novo criava outra execução e renotificava os mesmos atrasos (EVAL-11). Agora preparar
+(a) devolve a execução `awaiting_approval` existente, em vez de criar outra, e (b) exclui pedidos cujo
+cliente já foi notificado por uma execução concluída nas últimas 24h. A janela é uma escolha de produto
+deliberadamente simples.

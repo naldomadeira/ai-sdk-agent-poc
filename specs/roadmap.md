@@ -94,8 +94,7 @@ React 19.2, Zod 4.6, Vitest 5, Tailwind 4, `@modelcontextprotocol/sdk` 1.30.
 
 **Resultado final:** `lint` ✓ · `typecheck` ✓ · `test` 98/98 ✓ · `build` ✓.
 
-**Publicação (2026-09-27):** repositório público `ai-sdk-agent-poc` no GitHub, licença MIT, README em
-inglês com limitações e aprendizados do teste com modelo real. Sem mudança de arquitetura.
+
 
 Smoke test com LLM real (`claude-haiku-4-5` via gateway compatível, `pnpm smoke`) — os 5 cenários do
 enunciado funcionaram ponta a ponta, incluindo aprovação pela UI no navegador. Ajustes que ele revelou
@@ -113,12 +112,42 @@ enunciado funcionaram ponta a ponta, incluindo aprovação pela UI no navegador.
 - [x] `lint`, `typecheck`, `test`, `build` verdes
 - [x] `architecture.md` com a resposta sobre capabilities mínimas
 
+## Fase 11 — Publicação ✅
+
+- [x] Repositório público `naldomadeira/ai-sdk-agent-poc`, licença MIT
+- [x] README em inglês com limitações e aprendizados do teste com modelo real
+- [x] Verificação de segredos antes do primeiro commit. Sem mudança de arquitetura.
+
+## Fase 12 — Agent Evaluation & Security Benchmark ✅
+
+Equivalente à Fase 12 da POC Mastra. Detalhes em [evaluation.md](./evaluation.md) e
+[evaluation-cases.md](./evaluation-cases.md).
+
+- [x] Matriz de 12 casos (`EVAL-01`…`EVAL-12`) com IDs canônicos, também para a POC Mastra
+- [x] Harness pelo caminho HTTP real, com checks de invariante × comportamento e resultado normalizado
+- [x] Modos mock (ideal / adversarial, roda no CI) e real (`pnpm eval:real`, `--repeat N`)
+- [x] Fonte da verdade: tool result + diff do banco + auditoria + o que chegou ao modelo
+- [x] Graders determinísticos calibrados (`tests/unit/graders.test.ts`)
+
+**Resultado:** mock 9/12 → **11/12** após correções; real: rodada 1 9/12, rodada final **12/12**.
+Nenhuma invariante falhou com o modelo real.
+
+**Correções que o benchmark motivou** (bugs contra garantias já declaradas, não features novas):
+- aprovação de uso único (`consumed_approvals`, migration 004): o replay direto no agente executava 2×;
+- workflow idempotente por evento: rodar de novo duplicava notificações;
+- tentativa de usar tool indisponível passa a ser auditada.
+
+**Lacuna conhecida, não corrigida:** EVAL-07. Um modelo que obedece a instrução injetada executa uma action
+permitida ao usuário e sem aprovação (`cancelOrder`). Opções em evaluation.md §3.
+
 ---
 
 ## Próximos passos (fora do escopo da POC)
 
 - Autenticação real (Auth.js / sessão da aplicação) no lugar do seletor de usuário.
 - Four-eyes: quem aprova um reembolso ≠ quem pediu, para valores altos.
+- Fechar a lacuna do EVAL-07: aprovação por risco ou "taint" (escrita após leitura de dado não confiável exige aprovação).
+- Caso de avaliação para alucinação sobre regras do sistema ("cancelar reembolsa automaticamente").
 - RLS no Postgres para agentes voltados ao cliente final (leitura genérica com escopo por linha).
 - Aprovação via MCP (elicitation) para expor capabilities sensíveis a outros agentes.
 - Workflows duráveis (`WorkflowAgent` / Vercel Workflow) quando houver espera longa ou retries.

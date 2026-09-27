@@ -25,3 +25,12 @@
 - Nesta POC quem pede e quem aprova é o mesmo usuário. Para valores altos, o próximo passo é four-eyes
   (aprovador ≠ solicitante, validado no use case).
 - MCP não expõe capabilities com aprovação até existir um canal de aprovação humano (ADR 0001).
+
+## Adendo — Fase 12 (2026-09-27)
+
+O EVAL-10 mostrou que a assinatura HMAC **não torna a aprovação de uso único**: reapresentar a mesma
+`tool-approval-response` direto ao agente executava de novo. A rota HTTP já estava protegida pelo merge
+(ADR 0005), mas a garantia precisa valer em qualquer canal. `invokeCapability` agora consome a aprovação
+em `consumed_approvals` (PK sobre o id da aprovação = `toolCallId` aprovado) antes de executar; reuso →
+`APPROVAL_ALREADY_USED`. A aprovação é consumida mesmo que a execução falhe por regra de negócio, o que
+falha fechado: uma nova tentativa exige nova aprovação.

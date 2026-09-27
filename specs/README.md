@@ -7,6 +7,8 @@ documento é atualizado junto com o código.
 | --- | --- |
 | [roadmap.md](./roadmap.md) | Fases, status e critério de pronto de cada fase |
 | [architecture.md](./architecture.md) | Camadas, fluxos, segurança e a resposta à pergunta central da POC |
+| [evaluation.md](./evaluation.md) | Fase 12: método, resultados e achados do benchmark de agente e segurança |
+| [evaluation-cases.md](./evaluation-cases.md) | Catálogo canônico dos casos `EVAL-01`…`EVAL-12` |
 | [decisions/](./decisions/) | ADRs — decisões arquiteturais e seus trade-offs |
 
 ## Pergunta central
@@ -29,3 +31,4 @@ para processos determinísticos. Toda autorização e regra de negócio fica na 
 | [0006](./decisions/0006-deterministic-workflows.md) | Workflows determinísticos com estado persistido, fora do loop do LLM |
 | [0007](./decisions/0007-raw-sql-no-orm.md) | `pg` + SQL puro em vez de ORM |
 | [0008](./decisions/0008-authentication-stub.md) | Autenticação simulada, autorização real |
+| [0009](./decisions/0009-evaluation-invariants-vs-behavior.md) | Avaliação: invariantes da aplicação × comportamento do modelo |

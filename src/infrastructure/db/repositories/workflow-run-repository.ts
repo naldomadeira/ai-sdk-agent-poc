@@ -52,6 +52,22 @@ export const workflowRunRepository = {
     return rows[0] ? toRun<P, R>(rows[0]) : null;
   },
 
+  async findLatestByStatus<P, R>(db: Queryable, workflow: string, status: WorkflowRunStatus) {
+    const { rows } = await db.query<Row>(
+      "SELECT * FROM workflow_runs WHERE workflow = $1 AND status = $2 ORDER BY created_at DESC LIMIT 1",
+      [workflow, status],
+    );
+    return rows[0] ? toRun<P, R>(rows[0]) : null;
+  },
+
+  async listByStatusSince<P, R>(db: Queryable, workflow: string, status: WorkflowRunStatus, since: Date) {
+    const { rows } = await db.query<Row>(
+      "SELECT * FROM workflow_runs WHERE workflow = $1 AND status = $2 AND updated_at >= $3 ORDER BY created_at",
+      [workflow, status, since],
+    );
+    return rows.map((r) => toRun<P, R>(r));
+  },
+
   async finish<R>(db: Queryable, id: string, update: { status: WorkflowRunStatus; approvedBy?: string; result: R }) {
     await db.query(
       `UPDATE workflow_runs SET status = $2, approved_by = $3, result = $4, updated_at = now() WHERE id = $1`,

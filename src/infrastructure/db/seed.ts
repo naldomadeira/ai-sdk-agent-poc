@@ -105,7 +105,7 @@ export const SEED_FACTS = {
 const HOUR = 3600_000;
 
 export async function seed(db: Queryable, now = new Date()) {
-  await db.query(`TRUNCATE agent_audit_log, customer_notifications, workflow_runs, chats, staff_users,
+  await db.query(`TRUNCATE consumed_approvals, agent_audit_log, customer_notifications, workflow_runs, chats, staff_users,
     payments, order_items, orders, products, customers RESTART IDENTITY CASCADE`);
 
   for (const s of STAFF) {

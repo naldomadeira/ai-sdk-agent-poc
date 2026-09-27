@@ -42,14 +42,14 @@ export function defineCapability<I, O>(capability: Capability<I, O>): Capability
   return capability;
 }
 
-export type CapabilityErrorCode = DomainErrorCode | "INTERNAL";
+export type CapabilityErrorCode = DomainErrorCode | "APPROVAL_ALREADY_USED" | "INTERNAL";
 
 export type CapabilityResult<O> =
   | { ok: true; data: O }
   | { ok: false; error: { code: CapabilityErrorCode; message: string; details?: unknown } };
 
 export interface ApprovalEvidence {
-  /** Id da aprovação emitida pelo canal (ex.: approvalId do AI SDK). */
+  /** Id único da aprovação no canal (no AI SDK, o toolCallId aprovado). Consumido uma única vez. */
   id: string;
   approvedBy: string;
 }
@@ -100,8 +100,15 @@ export async function invokeCapability<I, O>(
   if (!can(ctx.principal, capability.permission)) {
     return fail("forbidden", "FORBIDDEN", `Sem permissão para ${capability.name}`);
   }
-  if (capability.approval === "required" && !opts.approval) {
-    return fail("forbidden", "APPROVAL_REQUIRED", `${capability.name} exige aprovação humana`);
+  if (capability.approval === "required") {
+    if (!opts.approval) return fail("forbidden", "APPROVAL_REQUIRED", `${capability.name} exige aprovação humana`);
+    // Uso único: reapresentar a mesma aprovação (replay) não executa de novo, em nenhum canal.
+    const { rowCount } = await ctx.app.db.query(
+      `INSERT INTO consumed_approvals (approval_id, capability, consumed_by) VALUES ($1, $2, $3)
+       ON CONFLICT (approval_id) DO NOTHING`,
+      [opts.approval.id, capability.name, ctx.principal.id],
+    );
+    if (!rowCount) return fail("forbidden", "APPROVAL_ALREADY_USED", "Esta aprovação já foi utilizada");
   }
 
   try {

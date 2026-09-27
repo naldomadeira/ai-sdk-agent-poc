@@ -4,7 +4,7 @@ import { assertCan, type Principal } from "@/domain/auth/principal";
 import { lateOrderNotification, type NotificationDraft } from "@/domain/notifications/notification";
 import { DomainError, invalidState, notFound } from "@/domain/shared/errors";
 import { orderRepository } from "@/infrastructure/db/repositories/order-repository";
-import { workflowRunRepository } from "@/infrastructure/db/repositories/workflow-run-repository";
+import { workflowRunRepository, type WorkflowRun } from "@/infrastructure/db/repositories/workflow-run-repository";
 
 /**
  * Workflow determinístico: "pedidos atrasados → notificar clientes".
@@ -32,12 +32,44 @@ export interface LateOrderNotificationsResult {
   skipped: { customerId: number; reason: string }[];
 }
 
+/** Janela em que um pedido atrasado já notificado não é notificado de novo. */
+const RENOTIFY_AFTER_MS = 24 * 3600_000;
+
+type Run = WorkflowRun<LateOrderNotificationsPayload, LateOrderNotificationsResult>;
+
+const summarize = (run: Run, reusedExistingRun: boolean) => ({
+  runId: run.id,
+  status: run.status,
+  reusedExistingRun,
+  lateOrderCount: run.payload.lateOrders.length,
+  customerCount: run.payload.drafts.length,
+  drafts: run.payload.drafts.map((d) => ({ customerId: d.customerId, customerName: d.customerName, orderIds: d.orderIds, subject: d.subject, body: d.body })),
+});
+
 export async function prepareLateOrderNotifications(ctx: AppContext, principal: Principal) {
   assertCan(principal, "workflows:late-orders");
   const now = ctx.now();
 
-  // 1. pedidos atrasados
-  const lateOrders = await orderRepository.findLate(ctx.db, now);
+  // Idempotência por evento (achado do EVAL-11): rodar o workflow de novo não pode duplicar efeitos.
+  // (a) já existe uma execução aguardando aprovação → devolve a mesma, em vez de criar outra;
+  const pending = await workflowRunRepository.findLatestByStatus<LateOrderNotificationsPayload, LateOrderNotificationsResult>(
+    ctx.db, LATE_ORDER_WORKFLOW, "awaiting_approval",
+  );
+  if (pending) return summarize(pending, true);
+
+  // (b) pedidos cujo cliente já foi notificado por uma execução concluída nas últimas 24h ficam de fora.
+  const recent = await workflowRunRepository.listByStatusSince<LateOrderNotificationsPayload, LateOrderNotificationsResult>(
+    ctx.db, LATE_ORDER_WORKFLOW, "completed", new Date(now.getTime() - RENOTIFY_AFTER_MS),
+  );
+  const alreadyNotified = new Set(
+    recent.flatMap((run) => {
+      const sent = new Set((run.result?.sent ?? []).map((s) => s.customerId));
+      return run.payload.drafts.filter((d) => sent.has(d.customerId)).flatMap((d) => d.orderIds);
+    }),
+  );
+
+  // 1. pedidos atrasados (ainda não notificados)
+  const lateOrders = (await orderRepository.findLate(ctx.db, now)).filter((o) => !alreadyNotified.has(o.orderId));
 
   // 2. clientes afetados
   const byCustomer = new Map<number, typeof lateOrders>();
@@ -63,14 +95,7 @@ export async function prepareLateOrderNotifications(ctx: AppContext, principal: 
     requestedBy: principal.id,
     payload,
   });
-
-  return {
-    runId: run.id,
-    status: run.status,
-    lateOrderCount: lateOrders.length,
-    customerCount: drafts.length,
-    drafts: drafts.map((d) => ({ customerId: d.customerId, customerName: d.customerName, orderIds: d.orderIds, subject: d.subject, body: d.body })),
-  };
+  return summarize({ ...run, result: null } as Run, false);
 }
 
 /** 5. Envio — só para runs aguardando aprovação; idempotente pela transição de estado. */

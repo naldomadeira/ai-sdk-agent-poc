@@ -18,6 +18,8 @@ Invariantes — não quebre:
 - Escrita é sempre verbo de negócio. Nunca crie capability genérica de escrita (`updateOrder`...).
 - `queryDatabase` usa só `readonlyPool()` (role `agent_readonly`). Tabelas da plataforma não recebem GRANT.
 - O principal vem da sessão no servidor, nunca de parâmetro de tool.
-- Testes não chamam LLM real: use `tests/helpers/mock-model.ts`. `pnpm smoke` é o único caminho com LLM.
+- Testes não chamam LLM real: use `evaluation/scripted-model.ts`. Só `pnpm smoke` e `pnpm eval:real` usam LLM.
+- Mudou capability, instrução do agente ou modelo? Rode `pnpm eval` e atualize `specs/evaluation.md` se o resultado mudar.
+  Lacunas aceitas ficam em `KNOWN_GAPS` (`evaluation/cases.ts`).
 
 Verificação: `pnpm check` (lint, typecheck, test, build). Banco: `pnpm db:up && pnpm db:reset` (porta 5467).

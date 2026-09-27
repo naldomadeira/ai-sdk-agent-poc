@@ -80,6 +80,25 @@ export async function handleChatRequest(principal: Principal, rawBody: unknown, 
     generateMessageId: createIdGenerator({ prefix: "msg", size: 16 }),
     // Garante que onEnd rode (e o histórico seja salvo) mesmo se o cliente desconectar.
     consumeSseStream: consumeStream,
+    // O modelo pode tentar chamar uma tool que o papel do usuário não tem (ela nem foi oferecida).
+    // Nada executa — o AI SDK devolve erro ao modelo —, mas a tentativa fica registrada.
+    onStepEnd: async (step) => {
+      for (const part of step.content) {
+        if (part.type !== "tool-error" || part.toolName in agent.tools) continue;
+        await ctx.audit.record({
+          actorId: principal.id,
+          actorRole: principal.role,
+          agent: COMMERCE_AGENT,
+          channel: ctx.channel,
+          chatId,
+          capability: part.toolName,
+          event: "capability_call",
+          status: "forbidden",
+          input: part.input,
+          error: "TOOL_NOT_AVAILABLE: capability não disponível para o papel do usuário",
+        });
+      }
+    },
     onError: (error) => {
       console.error("commerceAgent stream error", error);
       return "Não consegui concluir a resposta. Tente novamente.";

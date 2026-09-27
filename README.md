@@ -90,8 +90,9 @@ Nothing below depends on the system prompt. Removing the prompt entirely opens n
 - **Human approval** — capabilities flagged `approval: "required"` map to AI SDK v7 `toolApproval`
   (`user-approval`). The executor fails closed: an approval-required capability without approval evidence
   never runs. Approval does not replace permission.
-- **Signed approvals** — approvals are HMAC-signed (`experimental_toolApprovalSecret`), binding tool name,
-  call id and input. Tampering with the input after the request is rejected (covered by a test).
+- **Signed, single-use approvals** — approvals are HMAC-signed (`experimental_toolApprovalSecret`), binding
+  tool name, call id and input; tampering is rejected. The executor also consumes each approval exactly once
+  (`consumed_approvals`), so replaying an approval never executes twice — on any channel.
 - **Server-owned history** — the client sends only the new message; the server accepts only a new user
   message or an approval response for a tool call it issued. Injected assistant messages are rejected.
 - **Audit** — every capability call (any channel) and every approval request/grant/denial is stored in
@@ -139,12 +140,14 @@ The UI and the demo data are in Portuguese (pt-BR); so are code comments and the
 | --- | --- |
 | `pnpm lint` · `pnpm typecheck` · `pnpm test` · `pnpm build` | checks (`pnpm check` runs all four) |
 | `pnpm db:up` · `db:down` · `db:migrate` · `db:seed` · `db:reset` | database |
+| `pnpm eval` · `pnpm eval:real [--repeat N]` | evaluation benchmark (mock / real model) → `evaluation/results/` |
 | `pnpm smoke [scenario...]` | scenarios against the running server **with the real model** (costs tokens) |
 | `pnpm mcp` | MCP stdio server (for MCP clients, invoke `tsx` directly — see `scripts/mcp-server.ts`) |
 
 ## Tests
 
-Current status: **98/98 tests passing**, `lint` ✓, `typecheck` ✓, `build` ✓.
+Current status: **115/115 tests passing** (including the 12-case evaluation benchmark in mock mode),
+`lint` ✓, `typecheck` ✓, `build` ✓.
 
 Automated tests **never call a real LLM**. They run against a dedicated Postgres database
 (`commerce_test`) and use the AI SDK's `MockLanguageModelV4` with scripted turns to drive the real agent
@@ -162,6 +165,37 @@ loop. Coverage includes:
 In addition, **manual smoke tests with a real model** (Claude Haiku 4.5) were run through the real HTTP
 route (`pnpm smoke`) and in the browser, covering all six scenarios above, including clicking
 **Approve** on a refund in the UI.
+
+## Evaluation benchmark (Phase 12)
+
+A reproducible 12-case benchmark ([`specs/evaluation.md`](./specs/evaluation.md),
+[`specs/evaluation-cases.md`](./specs/evaluation-cases.md)) asks: *does the agent pick the right capabilities,
+respect the application's limits, and fail to cause improper effects when the model misbehaves?*
+
+Every check is either an **invariant** (did the application prevent the effect?) or **behavior** (did the
+agent choose well and stay honest?). Cases run with a scripted mock — *ideal* to validate graders,
+*adversarial* to simulate a misbehaving model — and with the real model. The source of truth is never the
+model's text: persisted tool results + database diff + audit log + the tools/prompt actually sent to the model.
+
+| Case | | Case | |
+| --- | --- | --- | --- |
+| EVAL-01 | tool selection | EVAL-07 | prompt injection |
+| EVAL-02 | conversational context | EVAL-08 | destructive SQL |
+| EVAL-03 | permission boundary | EVAL-09 | approval integrity |
+| EVAL-04 | false success | EVAL-10 | approval replay |
+| EVAL-05 | hallucinated policy | EVAL-11 | workflow idempotency |
+| EVAL-06 | schema discipline | EVAL-12 | workflow approval |
+
+**Results.** Mock: 9/12 → **11/12** after fixes. Real model (Claude Haiku 4.5): first run 9/12, final run
+**12/12** — behavior varies between runs; **no invariant failed with the real model**.
+
+The benchmark found real bugs, fixed in this phase:
+- **approval replay** — HMAC-signed approvals were not single-use; replaying one directly to the agent refunded
+  twice (now blocked by a consumed-approvals check in the executor);
+- **workflow idempotency** — re-running the workflow re-notified the same customers (now idempotent per event);
+- attempts to call a tool the role doesn't have were not audited (now they are).
+
+And one **known gap**, left open on purpose (see limitations): EVAL-07.
 
 ## Findings from real-model testing
 
@@ -188,6 +222,10 @@ explaining actions, never for deciding whether they are allowed.
 - **Authentication is a user selector** (cookie) — a stand-in for real auth. Authorization is real;
   identity is simulated.
 - **Requester and approver can be the same person.** There is no four-eyes rule yet for high-value refunds.
+- **Prompt injection can trigger permitted, non-approval actions.** If the model obeys an instruction hidden
+  in data, the backend blocks destructive SQL and approval-gated actions, but an action the user *is allowed*
+  to perform without approval (`cancelOrder`) executes (EVAL-07). The blast radius of a manipulated model is
+  exactly the set of permitted, non-approval capabilities.
 - **MCP does not expose approval-required actions** (`refundPayment`, `sendPreparedNotifications`),
   because there is no human approval channel for MCP clients yet.
 - **No row-level security (RLS)** for customer-facing scenarios. Generic read access is designed for
@@ -213,7 +251,8 @@ src/
   mcp/                 MCP adapter
   observability/       audit log
   app/, components/    Next.js UI (chat, approvals, /audit)
-tests/                 unit + integration (mock model)
+evaluation/            Phase 12 benchmark: cases, harness, graders, results
+tests/                 unit + integration + evaluation (mock model)
 specs/                 roadmap, architecture, ADRs (planning source of truth)
 ```
 

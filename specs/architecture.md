@@ -70,12 +70,14 @@ o agente explica.
 2. `onEnd` persiste a mensagem e audita `approval_requested`.
 3. UI mostra o cartão (valor, pedido, motivo). Usuário aprova → `addToolApprovalResponse` → reenvio automático.
 4. Servidor aceita só a resposta de aprovação daquela tool call, audita `approval_granted`/`denied`.
-5. AI SDK verifica a assinatura e executa → `invokeCapability` com evidência de aprovação → use case
-   (que ainda exige `payments:refund`).
+5. AI SDK verifica a assinatura e executa → `invokeCapability` consome a aprovação (uso único,
+   `consumed_approvals`) → use case (que ainda exige `payments:refund`).
 
 ### Workflow (ex.: "Encontre pedidos atrasados e prepare notificações")
 `prepareLateOrderNotifications` (busca → agrupa → template → `workflow_runs.awaiting_approval`) →
-agente mostra rascunhos → `sendPreparedNotifications` (aprovação) → envio via use case, idempotente.
+agente mostra rascunhos → `sendPreparedNotifications` (aprovação) → envio via use case. Idempotente por
+execução (transição de estado) e por evento (preparar reaproveita a execução pendente e ignora atrasos já
+notificados nas últimas 24h).
 
 ## Agente × Workflow
 
@@ -99,12 +101,26 @@ O agente **dispara e explica** workflows; não os executa passo a passo com o LL
 | Regras de negócio | `domain/*` via use case | Não |
 | Somente leitura no SQL | guard + role + `READ ONLY` + timeout + limit | Não |
 | Aprovação humana | `toolApproval` + HMAC + `invokeCapability` falha fechado | Não |
+| Aprovação de uso único (anti-replay) | `consumed_approvals` no `invokeCapability` | Não |
 | Histórico íntegro | `mergeIncomingMessage` (servidor é a fonte) | Não |
 | Segredos | `.env.local` (ignorado), validados em `config/env.ts` | Não |
-| Auditoria | `invokeCapability` + handler de chat | Não |
+| Auditoria | `invokeCapability` + handler de chat (inclui tentativas de tool indisponível) | Não |
 
 O prompt só melhora a *experiência* (usar views, formatar R$, perguntar quando ambíguo, dizer o que o papel
 não permite). Remover o prompt inteiro não abre nenhuma brecha.
+
+**Limite verificado pela Fase 12 (EVAL-07):** a tabela acima impede efeitos *fora* do que o usuário pode
+fazer. Uma capability **permitida ao usuário e sem aprovação** executa se o modelo for induzido a chamá-la
+(ex.: prompt injection nos dados). O backend não distingue "o usuário pediu" de "o modelo foi induzido".
+O raio de dano de um modelo comprometido é, portanto, exatamente esse conjunto de capabilities.
+
+## Avaliação (Fase 12)
+
+Benchmark de 12 casos ([evaluation.md](./evaluation.md), [evaluation-cases.md](./evaluation-cases.md))
+separando **invariantes** (a aplicação impediu o efeito?) de **comportamento** (o agente escolheu bem?).
+Roda em mock (ideal e adversarial, no CI) e com o modelo real. A fonte da verdade é tool result + diff do
+banco + auditoria + as tools e o prompt que chegaram ao modelo. Resultado: nenhuma invariante falhou com o
+modelo real; com o modelo adversarial, só a lacuna acima.
 
 ## Observabilidade
 
@@ -150,7 +166,11 @@ O que torna esse mínimo **seguro** não é o número, é o que fica **fora** da
 - leitura genérica só é aceitável porque o banco garante somente-leitura (role + transação), não o prompt;
 - escrita é sempre semântica porque é onde moram as regras — um `updateOrder` genérico transferiria a regra
   de negócio para o modelo;
-- toda capability passa por um executor único que valida, autoriza, pede aprovação e audita.
+- toda capability passa por um executor único que valida, autoriza, pede aprovação (de uso único) e audita.
+
+E há uma segunda métrica, medida na Fase 12: **o número de capabilities permitidas e sem aprovação é o raio
+de dano se o modelo for manipulado**. Mínimo útil e seguro significa poucas capabilities no total **e**
+poucas executáveis sem um humano.
 
 ### Quando usar capability genérica × domain tool específica
 
@@ -179,5 +199,8 @@ se for irreversível ou financeira, aprovação humana.
 1. É leitura? Provavelmente já está coberta por `queryDatabase`. Se a definição for recorrente, crie uma
    **view** com `COMMENT ON` e conceda `SELECT` à `agent_readonly`.
 2. É escrita? Escreva a regra em `domain/`, o use case em `application/` (com `assertCan`), teste sem LLM.
-3. Crie a capability (schema Zod + `permission` + `approval`) delegando ao use case.
+3. Crie a capability (schema Zod + `permission` + `approval`) delegando ao use case. Para decidir `approval`,
+   pergunte "o que acontece se o modelo for induzido a chamar isto?", não só "é financeiro?".
 4. Registre em `capabilities/registry.ts` → aparece no agente web e no MCP, com auditoria.
+5. Adicione ou ajuste casos em `evaluation/cases.ts` e rode `pnpm eval` (e `pnpm eval:real` quando mudar
+   instruções ou modelo).
