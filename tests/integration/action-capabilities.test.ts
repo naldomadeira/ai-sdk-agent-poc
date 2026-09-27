@@ -80,12 +80,20 @@ describe("refundPayment capability", () => {
 });
 
 describe("sendCustomerNotification capability", () => {
-  it("envia", async () => {
-    const result = await invokeCapability(
-      sendCustomerNotification,
-      { customerId: 1, orderId: 123, subject: "Seu pedido", body: "Seu pedido foi atualizado. Obrigado!" },
-      capabilityContext(principals.support),
-    );
+  const input = { customerId: 1, orderId: 123, subject: "Seu pedido", body: "Seu pedido foi atualizado. Obrigado!" };
+  const sent = async () => (await db.query("SELECT count(*)::int AS n FROM customer_notifications")).rows[0].n;
+
+  it("sem aprovação humana não envia (texto escrito pelo modelo)", async () => {
+    const result = await invokeCapability(sendCustomerNotification, input, capabilityContext(principals.support));
+    expect(result).toMatchObject({ ok: false, error: { code: "APPROVAL_REQUIRED" } });
+    expect(await sent()).toBe(0);
+  });
+
+  it("com aprovação envia", async () => {
+    const result = await invokeCapability(sendCustomerNotification, input, capabilityContext(principals.support), {
+      approval: { id: "appr_notify", approvedBy: "u_bruno" },
+    });
     expect(result).toMatchObject({ ok: true, data: { customerId: 1, channel: "email" } });
+    expect(await sent()).toBe(1);
   });
 });

@@ -13,6 +13,7 @@ import { DomainError } from "@/domain/shared/errors";
 import { chatRepository } from "@/infrastructure/db/repositories/chat-repository";
 import { createCapabilityContext } from "./capability-context";
 import { mergeIncomingMessage, pendingApprovals, titleFrom } from "./chat-memory";
+import { reconcileStoredChat } from "./chat-reconcile";
 import { COMMERCE_AGENT, createCommerceAgent, type CommerceAgent } from "./commerce-agent";
 
 const bodySchema = z.object({
@@ -40,14 +41,19 @@ export async function handleChatRequest(principal: Principal, rawBody: unknown, 
   const chatId = body.data.id;
 
   const ctx = opts.context?.(principal, chatId) ?? createCapabilityContext(principal, { channel: "agent", agent: COMMERCE_AGENT, chatId });
-  const stored = await chatRepository.findById(ctx.app.db, chatId);
+  const found = await chatRepository.findById(ctx.app.db, chatId);
   // Chat de outro usuário: 404 (não revela que existe).
-  if (stored && stored.ownerId !== principal.id) return json(404, "Chat não encontrado");
+  if (found && found.ownerId !== principal.id) return json(404, "Chat não encontrado");
+  // Estado real antes de aceitar qualquer decisão (ex.: execução aprovada por outra pessoa).
+  const stored = found ? await reconcileStoredChat(ctx.app, found) : null;
 
   let merged;
   try {
     merged = mergeIncomingMessage(stored?.messages ?? [], body.data.message);
   } catch (error) {
+    if (error instanceof DomainError && error.code === "ALREADY_DECIDED") {
+      return Response.json({ error: error.message, code: "ALREADY_DECIDED" }, { status: 409 });
+    }
     if (error instanceof DomainError) return json(400, error.message);
     throw error;
   }

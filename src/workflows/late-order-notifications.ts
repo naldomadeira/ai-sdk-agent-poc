@@ -2,8 +2,9 @@ import type { AppContext } from "@/application/context";
 import { sendCustomerNotification } from "@/application/notifications/send-customer-notification";
 import { assertCan, type Principal } from "@/domain/auth/principal";
 import { lateOrderNotification, type NotificationDraft } from "@/domain/notifications/notification";
-import { DomainError, invalidState, notFound } from "@/domain/shared/errors";
+import { DomainError, notFound } from "@/domain/shared/errors";
 import { orderRepository } from "@/infrastructure/db/repositories/order-repository";
+import { staffRepository } from "@/infrastructure/db/repositories/staff-repository";
 import { workflowRunRepository, type WorkflowRun } from "@/infrastructure/db/repositories/workflow-run-repository";
 
 /**
@@ -37,10 +38,25 @@ const RENOTIFY_AFTER_MS = 24 * 3600_000;
 
 type Run = WorkflowRun<LateOrderNotificationsPayload, LateOrderNotificationsResult>;
 
-const summarize = (run: Run, reusedExistingRun: boolean) => ({
+/**
+ * Resumo devolvido ao agente e à UI. `notice` é texto da APLICAÇÃO (não do modelo): a UI o mostra
+ * direto do resultado da tool, então o usuário sabe que a execução foi reaproveitada e de quem ela é,
+ * mesmo que o modelo omita isso.
+ */
+const summarize = (run: Run, current: Principal, reusedExistingRun: boolean, requestedByName: string) => ({
   runId: run.id,
   status: run.status,
   reusedExistingRun,
+  preparedByCurrentUser: run.requestedBy === current.id,
+  requestedBy: requestedByName,
+  preparedAt: run.payload.preparedAt,
+  notice: reusedExistingRun
+    ? `Já existe uma execução pendente de aprovação, preparada por ${run.requestedBy === current.id ? "você" : requestedByName} ` +
+      `em ${new Date(run.payload.preparedAt).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}. ` +
+      "Nenhuma execução nova foi criada; aprovar o envio decide esta mesma execução."
+    : run.status === "completed"
+      ? "Nenhum pedido atrasado pendente de notificação."
+      : "Nova execução preparada. Nada foi enviado; o envio exige aprovação.",
   lateOrderCount: run.payload.lateOrders.length,
   customerCount: run.payload.drafts.length,
   drafts: run.payload.drafts.map((d) => ({ customerId: d.customerId, customerName: d.customerName, orderIds: d.orderIds, subject: d.subject, body: d.body })),
@@ -55,7 +71,10 @@ export async function prepareLateOrderNotifications(ctx: AppContext, principal: 
   const pending = await workflowRunRepository.findLatestByStatus<LateOrderNotificationsPayload, LateOrderNotificationsResult>(
     ctx.db, LATE_ORDER_WORKFLOW, "awaiting_approval",
   );
-  if (pending) return summarize(pending, true);
+  if (pending) {
+    const owner = await staffRepository.findById(ctx.db, pending.requestedBy);
+    return summarize(pending, principal, true, owner?.name ?? pending.requestedBy);
+  }
 
   // (b) pedidos cujo cliente já foi notificado por uma execução concluída nas últimas 24h ficam de fora.
   const recent = await workflowRunRepository.listByStatusSince<LateOrderNotificationsPayload, LateOrderNotificationsResult>(
@@ -95,7 +114,7 @@ export async function prepareLateOrderNotifications(ctx: AppContext, principal: 
     requestedBy: principal.id,
     payload,
   });
-  return summarize({ ...run, result: null } as Run, false);
+  return summarize({ ...run, result: null } as Run, principal, false, principal.name);
 }
 
 /** 5. Envio — só para runs aguardando aprovação; idempotente pela transição de estado. */
@@ -108,7 +127,11 @@ export async function sendPreparedLateOrderNotifications(ctx: AppContext, princi
     });
     if (!run || run.workflow !== LATE_ORDER_WORKFLOW) throw notFound("Execução de workflow", runId);
     if (run.status !== "awaiting_approval") {
-      throw invalidState(`Execução ${runId} não está aguardando aprovação (status: ${run.status})`, { status: run.status });
+      // Já decidida (enviada/rejeitada): o backend é a autoridade; nenhuma segunda decisão executa.
+      throw new DomainError("ALREADY_DECIDED", `Execução ${runId} já foi decidida (status: ${run.status})`, {
+        status: run.status,
+        approvedBy: run.approvedBy,
+      });
     }
 
     const result: LateOrderNotificationsResult = { sent: [], skipped: [] };
@@ -118,7 +141,8 @@ export async function sendPreparedLateOrderNotifications(ctx: AppContext, princi
           ctx,
           principal,
           { customerId: draft.customerId, orderId: draft.orderId, subject: draft.subject, body: draft.body },
-          { tx, workflowRunId: run.id },
+          // Texto do template de atraso, montado pela aplicação no preparo.
+          { tx, workflowRunId: run.id, content: { contentOrigin: "application_template", templateId: "order_late_apology" } },
         );
         result.sent.push({ customerId: draft.customerId, notificationId: sent.notificationId });
       } catch (error) {

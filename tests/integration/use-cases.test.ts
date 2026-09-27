@@ -86,19 +86,20 @@ describe("refundPayment", () => {
 
 describe("sendCustomerNotification", () => {
   const draft = { customerId: 1, orderId: 123, subject: "Seu pedido", body: "Seu pedido foi atualizado. Obrigado!" };
+  const agentText = { content: { contentOrigin: "agent_generated" as const } };
 
   it("envia e respeita o limite diário", async () => {
-    for (let i = 0; i < 3; i++) await sendCustomerNotification(ctx, principals.support, draft);
-    await expect(sendCustomerNotification(ctx, principals.support, draft)).rejects.toMatchObject({ code: "RATE_LIMITED" });
+    for (let i = 0; i < 3; i++) await sendCustomerNotification(ctx, principals.support, draft, agentText);
+    await expect(sendCustomerNotification(ctx, principals.support, draft, agentText)).rejects.toMatchObject({ code: "RATE_LIMITED" });
   });
 
   it("recusa pedido de outro cliente", async () => {
     await expect(
-      sendCustomerNotification(ctx, principals.support, { ...draft, customerId: 2 }),
+      sendCustomerNotification(ctx, principals.support, { ...draft, customerId: 2 }, agentText),
     ).rejects.toMatchObject({ code: "INVALID_INPUT" });
   });
 
   it("viewer não envia", async () => {
-    await expect(sendCustomerNotification(ctx, principals.viewer, draft)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(sendCustomerNotification(ctx, principals.viewer, draft, agentText)).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

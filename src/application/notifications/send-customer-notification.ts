@@ -2,7 +2,10 @@ import { assertCan, type Principal } from "@/domain/auth/principal";
 import {
   assertValidNotification,
   assertWithinRateLimit,
+  renderNotificationTemplate,
+  type ContentOrigin,
   type NotificationDraft,
+  type NotificationTemplateId,
 } from "@/domain/notifications/notification";
 import { invalidInput, notFound } from "@/domain/shared/errors";
 import type { Queryable } from "@/infrastructure/db/pool";
@@ -16,6 +19,15 @@ export interface SendNotificationResult {
   customerId: number;
   orderId: number | null;
   channel: "email";
+  contentOrigin: ContentOrigin;
+  templateId: string | null;
+  subject: string;
+  body: string;
+}
+
+export interface NotificationContentMeta {
+  contentOrigin: ContentOrigin;
+  templateId?: NotificationTemplateId;
 }
 
 /**
@@ -26,7 +38,7 @@ export async function sendCustomerNotification(
   ctx: AppContext,
   principal: Principal,
   draft: NotificationDraft,
-  opts: { tx?: Queryable; workflowRunId?: string } = {},
+  opts: { tx?: Queryable; workflowRunId?: string; content: NotificationContentMeta },
 ): Promise<SendNotificationResult> {
   assertCan(principal, "notifications:send");
   assertValidNotification(draft);
@@ -52,9 +64,40 @@ export async function sendCustomerNotification(
       sentBy: principal.id,
       workflowRunId: opts.workflowRunId,
       at: now,
+      contentOrigin: opts.content.contentOrigin,
+      templateId: opts.content.templateId,
     });
-    return { notificationId: id, customerId: customer.id, orderId: draft.orderId ?? null, channel: "email" as const };
+    return {
+      notificationId: id,
+      customerId: customer.id,
+      orderId: draft.orderId ?? null,
+      channel: "email" as const,
+      contentOrigin: opts.content.contentOrigin,
+      templateId: opts.content.templateId ?? null,
+      subject: draft.subject,
+      body: draft.body,
+    };
   };
 
   return opts.tx ? run(opts.tx) : ctx.db.transaction(run);
+}
+
+/**
+ * Resolve o texto de um template a partir de dados do banco (cliente, pedido, atraso).
+ * O modelo escolhe QUAL template e PARA QUEM; o texto é da aplicação.
+ */
+export async function composeTemplatedNotification(
+  ctx: AppContext,
+  input: { customerId: number; orderId?: number; template: NotificationTemplateId },
+): Promise<NotificationDraft> {
+  const customer = await customerRepository.findById(ctx.db, input.customerId);
+  if (!customer) throw notFound("Cliente", input.customerId);
+  let order: { id: number; status: string; daysLate?: number } | undefined;
+  if (input.orderId !== undefined) {
+    const found = await orderRepository.findById(ctx.db, input.orderId);
+    if (!found) throw notFound("Pedido", `#${input.orderId}`);
+    const late = ctx.now().getTime() - found.expectedDeliveryAt.getTime();
+    order = { id: found.id, status: found.status, daysLate: Math.max(0, Math.floor(late / 86_400_000)) };
+  }
+  return renderNotificationTemplate(input.template, { customer, order });
 }

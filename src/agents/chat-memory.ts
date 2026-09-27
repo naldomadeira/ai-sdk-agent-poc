@@ -1,6 +1,6 @@
 import { isToolUIPart, getToolName, type UIMessage } from "ai";
 import { z } from "zod";
-import { invalidInput } from "@/domain/shared/errors";
+import { DomainError, invalidInput } from "@/domain/shared/errors";
 
 /**
  * Memória de conversa = histórico persistido no servidor (tabela chats).
@@ -62,6 +62,20 @@ export function mergeIncomingMessage(
 
   const approvals: ApprovalDecision[] = [];
   const target = stored[index];
+
+  // Decisão sobre algo que o servidor já considera decidido (replay, aba desatualizada, execução
+  // decidida por outra pessoa): recusa explícita, nunca uma segunda execução.
+  for (const answer of incoming.parts) {
+    if (!isToolUIPart(answer) || answer.state !== "approval-responded") continue;
+    const current = target.parts.find((p) => isToolUIPart(p) && p.toolCallId === answer.toolCallId);
+    if (current && isToolUIPart(current) && current.state !== "approval-requested") {
+      throw new DomainError("ALREADY_DECIDED", "Esta aprovação já foi decidida. Atualize a conversa.", {
+        toolCallId: answer.toolCallId,
+        state: current.state,
+      });
+    }
+  }
+
   const parts = target.parts.map((part) => {
     if (!isToolUIPart(part) || part.state !== "approval-requested") return part;
     const answer = incoming.parts.find(
@@ -92,4 +106,41 @@ export function pendingApprovals(message: UIMessage) {
 export function titleFrom(messages: UIMessage[]): string | null {
   const first = messages.find((m) => m.role === "user")?.parts.find((p) => p.type === "text");
   return first && "text" in first ? first.text.slice(0, 80) : null;
+}
+
+export type PendingApprovalResolver = (toolName: string, input: unknown) => Promise<{ code: string; message: string } | null>;
+
+/**
+ * O backend é a autoridade sobre o estado: um pedido de aprovação cujo alvo já foi decidido por outro
+ * caminho (ex.: outra pessoa aprovou a mesma execução de workflow) deixa de aparecer como decidível.
+ * Vira um resultado de tool com o motivo, então a UI não mostra mais Aprovar/Rejeitar e o modelo vê
+ * o estado real.
+ */
+export async function reconcilePendingApprovals(messages: UIMessage[], resolve: PendingApprovalResolver) {
+  let changed = false;
+  const out: UIMessage[] = [];
+  for (const message of messages) {
+    if (message.role !== "assistant") {
+      out.push(message);
+      continue;
+    }
+    const parts = [];
+    for (const part of message.parts) {
+      if (!isToolUIPart(part) || part.state !== "approval-requested") {
+        parts.push(part);
+        continue;
+      }
+      const decided = await resolve(getToolName(part), part.input);
+      if (!decided) {
+        parts.push(part);
+        continue;
+      }
+      changed = true;
+      const { approval: _approval, ...rest } = part;
+      void _approval;
+      parts.push({ ...rest, state: "output-available", output: { ok: false, error: decided } } as unknown as typeof part);
+    }
+    out.push({ ...message, parts } as UIMessage);
+  }
+  return { messages: out, changed };
 }

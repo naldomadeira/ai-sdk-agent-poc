@@ -18,10 +18,11 @@ async function connect(principal: Principal) {
 }
 
 describe("MCP — mesmas capabilities, outro transporte", () => {
-  it("expõe capabilities permitidas e sem aprovação humana", async () => {
+  it("expõe capabilities permitidas e sem aprovação humana obrigatória", async () => {
     const client = await connect(principals.manager);
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
+    // sendCustomerNotification aparece: com template roda; com texto livre o executor exige aprovação.
     expect(names).toEqual(["cancelOrder", "inspectSchema", "prepareLateOrderNotifications", "queryDatabase", "sendCustomerNotification"]);
     expect(tools.find((t) => t.name === "queryDatabase")?.annotations?.readOnlyHint).toBe(true);
     expect(tools.find((t) => t.name === "queryDatabase")?.inputSchema.required).toContain("sql");

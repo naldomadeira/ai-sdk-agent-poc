@@ -90,11 +90,19 @@ export class EvalSession {
    * `edit` permite simular um cliente malicioso alterando a parte antes de enviar.
    */
   async answerApproval(approved: boolean, script: ScriptedTurn[] = [], opts: { edit?: (part: ToolPart) => ToolPart; chatId?: string } = {}) {
-    const pending = this.pendingApproval();
-    if (!pending || !this.last) throw new Error("nenhuma aprovação pendente");
-    let answered = { ...pending, state: "approval-responded", approval: { ...pending.approval!, approved } } as unknown as ToolPart;
-    if (opts.edit) answered = opts.edit(answered);
-    const message = { ...this.last, parts: this.last.parts.map((p) => (p === pending ? answered : p)) };
+    if (!this.pendingApproval() || !this.last) throw new Error("nenhuma aprovação pendente");
+    // Como a UI: responde a TODOS os pedidos pendentes da mensagem antes de reenviar.
+    const parts = this.last.parts.map((p) => {
+      if (!isToolUIPart(p) || p.state !== "approval-requested") return p;
+      const pending = p as ToolPart;
+      const answered = {
+        ...pending,
+        state: "approval-responded",
+        approval: { ...pending.approval!, approved, ...(approved ? {} : { reason: "Rejeitado pelo usuário" }) },
+      } as unknown as ToolPart;
+      return opts.edit ? opts.edit(answered) : answered;
+    });
+    const message = { ...this.last, parts };
     return this.send(message, script, { continues: message as UIMessage, chatId: opts.chatId });
   }
 

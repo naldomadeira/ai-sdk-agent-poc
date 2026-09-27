@@ -52,3 +52,60 @@ export function lateOrderNotification(
       `acompanhando e você receberá o código de rastreio atualizado em até 24h.`,
   };
 }
+
+// ---------- proveniência do conteúdo ----------
+
+/**
+ * De onde veio o texto que sai para o cliente. Decidido pela aplicação a partir da FORMA da chamada
+ * (template + dados estruturados × assunto/corpo livres), nunca por uma declaração do modelo.
+ */
+export type ContentOrigin = "agent_generated" | "application_template";
+
+export const NOTIFICATION_TEMPLATES = ["order_status_update", "order_late_apology", "satisfaction_survey"] as const;
+export type NotificationTemplateId = (typeof NOTIFICATION_TEMPLATES)[number];
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: "aguardando pagamento",
+  paid: "pago",
+  processing: "em separação",
+  shipped: "enviado",
+  delivered: "entregue",
+  cancelled: "cancelado",
+  refunded: "reembolsado",
+};
+
+export interface TemplateData {
+  customer: { id: number; name: string };
+  order?: { id: number; status: string; daysLate?: number };
+}
+
+/** Templates determinísticos: o texto depende só de dados do banco, não do modelo. */
+export function renderNotificationTemplate(templateId: NotificationTemplateId, data: TemplateData): NotificationDraft {
+  const firstName = data.customer.name.split(" ")[0];
+  const needsOrder = () => {
+    if (!data.order) throw invalidInput(`O template ${templateId} exige orderId`);
+    return data.order;
+  };
+  switch (templateId) {
+    case "order_status_update": {
+      const order = needsOrder();
+      return {
+        customerId: data.customer.id,
+        orderId: order.id,
+        subject: `Atualização do pedido #${order.id}`,
+        body: `Olá, ${firstName}. O status do seu pedido #${order.id} agora é: ${STATUS_LABELS[order.status] ?? order.status}. Obrigado por comprar conosco.`,
+      };
+    }
+    case "order_late_apology": {
+      const order = needsOrder();
+      return lateOrderNotification(data.customer, [{ orderId: order.id, daysLate: order.daysLate ?? 0 }]);
+    }
+    case "satisfaction_survey":
+      return {
+        customerId: data.customer.id,
+        orderId: data.order?.id,
+        subject: "Como foi sua experiência?",
+        body: `Olá, ${firstName}. Queremos saber como foi sua experiência com a nossa loja. Responda a este e-mail com uma nota de 0 a 10 e, se quiser, um comentário. Obrigado!`,
+      };
+  }
+}

@@ -54,7 +54,7 @@ same capabilities with the same validation, authorization and audit — no extra
 | `queryDatabase` | generic read | `data:read` | — | Runs one read-only `SELECT` with timeout and row limit |
 | `cancelOrder` | domain action | `orders:cancel` | — | Cancels an order that hasn't shipped |
 | `refundPayment` | domain action | `payments:refund` | **required** | Full or partial refund |
-| `sendCustomerNotification` | domain action | `notifications:send` | — | Emails a customer (simulated, rate-limited) |
+| `sendCustomerNotification` | domain action | `notifications:send` | **only for agent-written text** | Emails a customer (simulated, rate-limited): application `template` sends directly; free `subject`/`body` written by the agent requires approval of the exact text |
 | `prepareLateOrderNotifications` | workflow | `workflows:late-orders` | — | Finds late orders, groups by customer, drafts notifications (sends nothing) |
 | `sendPreparedNotifications` | workflow | `workflows:late-orders` | **required** | Sends the prepared drafts, once |
 
@@ -90,6 +90,12 @@ Nothing below depends on the system prompt. Removing the prompt entirely opens n
 - **Human approval** — capabilities flagged `approval: "required"` map to AI SDK v7 `toolApproval`
   (`user-approval`). The executor fails closed: an approval-required capability without approval evidence
   never runs. Approval does not replace permission.
+- **Content provenance** — authorization and content risk are separate decisions. A notification is either an
+  application template (rendered server-side from DB data) or agent-written text; the executor derives this from
+  the *shape* of the validated input (strict schema — the model cannot declare approval or origin) and requires
+  approval for agent-written content. The audit log records `content_origin` and the approval decision.
+- **Decisions are final** — a pending approval whose target was already decided elsewhere is reconciled
+  server-side (`ALREADY_DECIDED`, no more Approve button); any late decision gets HTTP 409.
 - **Signed, single-use approvals** — approvals are HMAC-signed (`experimental_toolApprovalSecret`), binding
   tool name, call id and input; tampering is rejected. The executor also consumes each approval exactly once
   (`consumed_approvals`), so replaying an approval never executes twice — on any channel.
@@ -146,7 +152,7 @@ The UI and the demo data are in Portuguese (pt-BR); so are code comments and the
 
 ## Tests
 
-Current status: **115/115 tests passing** (including the 12-case evaluation benchmark in mock mode),
+Current status: **117/117 tests passing** (including the 12-case evaluation benchmark in mock mode),
 `lint` ✓, `typecheck` ✓, `build` ✓.
 
 Automated tests **never call a real LLM**. They run against a dedicated Postgres database
@@ -225,8 +231,10 @@ explaining actions, never for deciding whether they are allowed.
 - **Prompt injection can trigger permitted, non-approval actions.** If the model obeys an instruction hidden
   in data, the backend blocks destructive SQL and approval-gated actions, but an action the user *is allowed*
   to perform without approval (`cancelOrder`) executes (EVAL-07). The blast radius of a manipulated model is
-  exactly the set of permitted, non-approval capabilities.
-- **MCP does not expose approval-required actions** (`refundPayment`, `sendPreparedNotifications`),
+  exactly the set of permitted, non-approval capabilities — today `cancelOrder` and template notifications
+  (fixed application text), plus `prepareLateOrderNotifications` (no external effect). Agent-written text to
+  customers now always requires approval, which removes arbitrary-content injection but **not** EVAL-07.
+- **MCP does not expose approval-required actions** (`refundPayment`, `sendPreparedNotifications`, and free-text `sendCustomerNotification`),
   because there is no human approval channel for MCP clients yet.
 - **No row-level security (RLS)** for customer-facing scenarios. Generic read access is designed for
   internal staff; a customer-facing agent needs RLS or specific read capabilities.

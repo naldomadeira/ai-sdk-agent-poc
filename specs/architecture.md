@@ -20,6 +20,8 @@
  inspectSchema        cancelOrder                prepareLateOrderNotifications
  queryDatabase        refundPayment  (aprovação) sendPreparedNotifications (aprovação)
       │               sendCustomerNotification         │
+      │               (template: sem aprovação ·        │
+      │                texto livre do agente: aprovação)│
       │                     │                          ▼
       │                     ▼                  workflows/late-order-notifications
       │               Use cases (application/)  (etapas fixas + workflow_runs)
@@ -102,6 +104,8 @@ O agente **dispara e explica** workflows; não os executa passo a passo com o LL
 | Somente leitura no SQL | guard + role + `READ ONLY` + timeout + limit | Não |
 | Aprovação humana | `toolApproval` + HMAC + `invokeCapability` falha fechado | Não |
 | Aprovação de uso único (anti-replay) | `consumed_approvals` no `invokeCapability` | Não |
+| Conteúdo livre do agente para terceiros exige aprovação | `contentOrigin` + `requiresApproval` no `invokeCapability` (origem pela forma do input, schema estrito) | Não |
+| Decisão já tomada não é decidida de novo | reconciliação do histórico + HTTP 409 `ALREADY_DECIDED` + estado do workflow | Não |
 | Histórico íntegro | `mergeIncomingMessage` (servidor é a fonte) | Não |
 | Segredos | `.env.local` (ignorado), validados em `config/env.ts` | Não |
 | Auditoria | `invokeCapability` + handler de chat (inclui tentativas de tool indisponível) | Não |
@@ -112,7 +116,10 @@ não permite). Remover o prompt inteiro não abre nenhuma brecha.
 **Limite verificado pela Fase 12 (EVAL-07):** a tabela acima impede efeitos *fora* do que o usuário pode
 fazer. Uma capability **permitida ao usuário e sem aprovação** executa se o modelo for induzido a chamá-la
 (ex.: prompt injection nos dados). O backend não distingue "o usuário pediu" de "o modelo foi induzido".
-O raio de dano de um modelo comprometido é, portanto, exatamente esse conjunto de capabilities.
+O raio de dano de um modelo comprometido é, portanto, exatamente esse conjunto de capabilities. Hoje:
+`cancelOrder`, `sendCustomerNotification` **com template** (texto fixo da aplicação) e
+`prepareLateOrderNotifications` (sem efeito externo). Texto livre do agente para clientes exige aprovação
+(ADR 0010).
 
 ## Avaliação (Fase 12)
 

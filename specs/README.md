@@ -32,3 +32,4 @@ para processos determinísticos. Toda autorização e regra de negócio fica na 
 | [0007](./decisions/0007-raw-sql-no-orm.md) | `pg` + SQL puro em vez de ORM |
 | [0008](./decisions/0008-authentication-stub.md) | Autenticação simulada, autorização real |
 | [0009](./decisions/0009-evaluation-invariants-vs-behavior.md) | Avaliação: invariantes da aplicação × comportamento do modelo |
+| [0010](./decisions/0010-approval-by-blast-radius.md) | Autorização × risco do conteúdo gerado; decisões já tomadas são finais (409) |

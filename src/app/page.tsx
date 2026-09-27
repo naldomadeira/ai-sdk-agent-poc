@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { Chat } from "@/components/chat";
 import { can } from "@/domain/auth/principal";
-import { appPool } from "@/infrastructure/db/pool";
+import { reconcileStoredChat } from "@/agents/chat-reconcile";
+import { appPool, createDatabase } from "@/infrastructure/db/pool";
 import { chatRepository } from "@/infrastructure/db/repositories/chat-repository";
 import { currentPrincipal } from "./session";
 
@@ -16,7 +17,11 @@ export default async function Home({ searchParams }: PageProps<"/">) {
     requested ? chatRepository.findById(appPool(), requested) : null,
   ]);
   // Chat de outro usuário não é carregado: começa uma conversa nova.
-  const owned = stored && stored.ownerId === principal.id ? stored : null;
+  // Aprovações pendentes já decididas por outro caminho são reconciliadas antes de renderizar.
+  const owned =
+    stored && stored.ownerId === principal.id
+      ? await reconcileStoredChat({ db: createDatabase(appPool()), now: () => new Date() }, stored)
+      : null;
   const chatId = owned?.id ?? requested ?? crypto.randomUUID();
 
   const permissions = (["orders:cancel", "payments:refund", "notifications:send"] as const).filter((p) => can(principal, p));

@@ -26,7 +26,7 @@ export default async function AuditPage() {
         <table className="w-full text-left text-xs">
           <thead className="border-b border-border text-muted">
             <tr>
-              {["quando", "usuário", "agente / canal", "capability", "evento", "status", "input", "resultado / erro", "ms"].map((h) => (
+              {["quando", "usuário", "agente / canal", "capability", "evento", "status", "aprovação", "conteúdo", "input", "resultado / erro", "ms"].map((h) => (
                 <th key={h} className="px-3 py-2 font-medium">{h}</th>
               ))}
             </tr>
@@ -42,6 +42,8 @@ export default async function AuditPage() {
                 <td className="px-3 py-2 font-mono">{e.capability}</td>
                 <td className="px-3 py-2">{e.event}</td>
                 <td className={`px-3 py-2 font-medium ${STATUS_TONE[e.status] ?? ""}`}>{e.status}</td>
+                <td className="px-3 py-2 text-muted">{e.approval ?? "—"}</td>
+                <td className="px-3 py-2 text-muted">{e.content_origin === "agent_generated" ? "gerado pelo agente" : e.content_origin === "application_template" ? "template da aplicação" : "—"}</td>
                 <td className="max-w-xs px-3 py-2"><Json value={e.input} /></td>
                 <td className="max-w-xs px-3 py-2">{e.error ? <span className="text-danger">{e.error}</span> : <Json value={e.output} />}</td>
                 <td className="px-3 py-2 text-muted">{e.duration_ms ?? ""}</td>

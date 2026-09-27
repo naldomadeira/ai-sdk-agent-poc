@@ -39,6 +39,10 @@ export function Chat({ chatId, initialMessages }: { chatId: string; initialMessa
     }),
     // Após Aprovar/Rejeitar, reenvia automaticamente para o agente continuar.
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
+    onError: (err) => {
+      // 409 ALREADY_DECIDED: o servidor já decidiu (outra aba, outra pessoa). Recarrega o estado real.
+      if (err.message.includes("ALREADY_DECIDED")) window.location.reload();
+    },
     onFinish: () => {
       // Mantém a URL apontando para esta conversa e atualiza a lista lateral.
       if (!window.location.search.includes(chatId)) window.history.replaceState(null, "", `/?c=${chatId}`);
@@ -97,7 +101,7 @@ export function Chat({ chatId, initialMessages }: { chatId: string; initialMessa
           ))}
 
           {status === "submitted" && <p className="text-sm text-muted">pensando…</p>}
-          {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">Erro: {error.message}</p>}
+          {error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">Erro: {readableError(error.message)}</p>}
           <div ref={bottomRef} />
         </div>
       </div>
@@ -129,4 +133,13 @@ export function Chat({ chatId, initialMessages }: { chatId: string; initialMessa
       </form>
     </div>
   );
+}
+
+/** O servidor responde erros como JSON ({ error, code }); mostra só a mensagem. */
+function readableError(message: string) {
+  try {
+    return (JSON.parse(message) as { error?: string }).error ?? message;
+  } catch {
+    return message;
+  }
 }

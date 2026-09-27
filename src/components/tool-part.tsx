@@ -19,6 +19,9 @@ const brl = (cents: unknown) =>
 function describeApproval(name: string, input: Record<string, unknown>) {
   if (name === "refundPayment") return `Reembolsar ${brl(input.amountCents)} do pedido #${input.orderId}. Motivo: ${input.reason}`;
   if (name === "sendPreparedNotifications") return `Enviar as notificações preparadas (execução ${String(input.runId).slice(0, 8)}…)`;
+  if (name === "sendCustomerNotification") {
+    return `Enviar e-mail escrito pelo agente ao cliente #${input.customerId}${input.orderId ? ` sobre o pedido #${input.orderId}` : ""}. Revise o texto:`;
+  }
   return JSON.stringify(input);
 }
 
@@ -55,6 +58,13 @@ export function ToolPart({
       {part.state === "approval-requested" && (
         <div className="mt-2 flex flex-col gap-2">
           <p>{describeApproval(name, input)}</p>
+          {name === "sendCustomerNotification" && (
+            // O humano aprova exatamente o texto que o cliente vai receber.
+            <blockquote className="rounded border border-border bg-surface p-2 text-sm">
+              <p className="font-medium">{String(input.subject ?? "")}</p>
+              <p className="mt-1 whitespace-pre-wrap">{String(input.body ?? "")}</p>
+            </blockquote>
+          )}
           <div className="flex gap-2">
             <button
               onClick={() => onApproval({ id: part.approval.id, approved: true })}
@@ -74,6 +84,18 @@ export function ToolPart({
 
       {output && !output.ok && <p className="mt-1 text-danger">{output.error.message}</p>}
       {part.state === "output-error" && <p className="mt-1 text-danger">{part.errorText}</p>}
+
+      {/* Texto da aplicação, direto do resultado da tool: não depende do modelo repetir. */}
+      {output?.ok && name === "prepareLateOrderNotifications" && (
+        <WorkflowNotice data={output.data as { notice?: string; reusedExistingRun?: boolean; preparedByCurrentUser?: boolean; requestedBy?: string }} />
+      )}
+      {output?.ok && name === "sendCustomerNotification" && (
+        <p className="mt-1 text-xs text-muted">
+          {(output.data as { contentOrigin?: string }).contentOrigin === "application_template"
+            ? `Texto padrão da aplicação (${(output.data as { templateId?: string }).templateId}), sem aprovação`
+            : "Texto escrito pelo agente, enviado após aprovação humana"}
+        </p>
+      )}
 
       {output?.ok && (
         <details className="mt-1">
@@ -105,4 +127,15 @@ function stateLabel(state: string, output?: Result) {
     default:
       return state;
   }
+}
+
+function WorkflowNotice({ data }: { data: { notice?: string; reusedExistingRun?: boolean; preparedByCurrentUser?: boolean; requestedBy?: string } }) {
+  if (!data.notice) return null;
+  const foreign = data.reusedExistingRun && !data.preparedByCurrentUser;
+  return (
+    <p className={`mt-2 rounded px-2 py-1 text-xs ${foreign ? "bg-warn-soft text-warn" : "bg-background text-muted"}`}>
+      {foreign && <strong>Execução de {data.requestedBy}. </strong>}
+      {data.notice}
+    </p>
+  );
 }

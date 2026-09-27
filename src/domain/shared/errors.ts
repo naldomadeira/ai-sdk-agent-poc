@@ -4,7 +4,8 @@ export type DomainErrorCode =
   | "INVALID_STATE"
   | "INVALID_INPUT"
   | "RATE_LIMITED"
-  | "APPROVAL_REQUIRED";
+  | "APPROVAL_REQUIRED"
+  | "ALREADY_DECIDED";
 
 /**
  * Erro de regra de negócio. A camada de capabilities o converte em resultado estruturado

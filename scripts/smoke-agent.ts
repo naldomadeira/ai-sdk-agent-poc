@@ -2,7 +2,7 @@
  * Smoke test contra o servidor real (LLM real — consome tokens):
  *   pnpm dev   # em outro terminal
  *   pnpm smoke [cenário...]
- * Cenários: consulta, memoria, acao, aprovacao, workflow, viewer
+ * Cenários: consulta, memoria, acao, aprovacao, workflow, viewer, notificacao
  * Passa pela rota HTTP de verdade (cookie de usuário, SSE, persistência, aprovação).
  */
 import { readUIMessageStream, type UIMessage, type UIMessageChunk } from "ai";
@@ -56,7 +56,14 @@ async function ask(user: string, chatId: string, text: string, opts: { approve?:
     const answered = {
       ...reply!,
       parts: reply!.parts.map((p) =>
-        p === pending ? { ...pending, state: "approval-responded", approval: { ...pending.approval, approved: opts.approve } } : p,
+        p === pending
+          ? {
+              ...pending,
+              state: "approval-responded",
+              // Mesmo formato que a UI envia (components/tool-part.tsx).
+              approval: { ...pending.approval, approved: opts.approve, ...(opts.approve ? {} : { reason: "Rejeitado pelo usuário" }) },
+            }
+          : p,
       ),
     };
     const before = answered.parts.length;
@@ -81,6 +88,8 @@ const scenarios: Record<string, () => Promise<unknown>> = {
     await ask("u_bruno", chat, "Pode enviar.", { approve: true });
   },
   viewer: () => ask("u_carla", `smoke-${Date.now()}-v`, "Cancele o pedido #127, o cliente pediu."),
+  notificacao: () =>
+    ask("u_ana", `smoke-${Date.now()}-n`, "Mande um e-mail para o João Silva avisando que o pedido #123 já está em separação.", { approve: false }),
 };
 
 async function main() {

@@ -18,6 +18,10 @@ export interface AuditEntry {
   error?: string;
   approvalId?: string;
   durationMs?: number;
+  /** Proveniência do conteúdo externo, quando a capability produz texto para terceiros. */
+  contentOrigin?: "agent_generated" | "application_template";
+  /** Decisão do executor: aprovação não exigida, exigida e presente, ou exigida e ausente. */
+  approval?: "not_required" | "approved" | "missing";
 }
 
 export interface AuditLogger {
@@ -47,12 +51,13 @@ export function createAuditLogger(db: Queryable, opts: { console?: boolean } = {
       try {
         await db.query(
           `INSERT INTO agent_audit_log (actor_id, actor_role, agent, channel, chat_id, capability, event, status,
-             input, output, error, approval_id, duration_ms)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+             input, output, error, approval_id, duration_ms, content_origin, approval)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
           [
             entry.actorId, entry.actorRole, entry.agent, entry.channel, entry.chatId ?? null, entry.capability,
             entry.event, entry.status, JSON.stringify(compact(entry.input)), JSON.stringify(compact(entry.output)),
             entry.error ?? null, entry.approvalId ?? null, entry.durationMs ?? null,
+            entry.contentOrigin ?? null, entry.approval ?? null,
           ],
         );
       } catch (error) {
@@ -78,6 +83,8 @@ export interface AuditRow {
   error: string | null;
   approval_id: string | null;
   duration_ms: number | null;
+  content_origin: string | null;
+  approval: string | null;
 }
 
 export async function recentAuditEntries(db: Queryable, limit = 100): Promise<AuditRow[]> {

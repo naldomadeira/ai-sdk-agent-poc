@@ -32,7 +32,7 @@ describe("workflow late-order-notifications", () => {
     expect(sent.sent).toHaveLength(run.customerCount);
     expect(await notificationCount()).toBe(run.customerCount);
 
-    await expect(sendPreparedLateOrderNotifications(ctx, principals.support, run.runId)).rejects.toMatchObject({ code: "INVALID_STATE" });
+    await expect(sendPreparedLateOrderNotifications(ctx, principals.support, run.runId)).rejects.toMatchObject({ code: "ALREADY_DECIDED" });
     expect(await notificationCount()).toBe(run.customerCount);
   });
 
@@ -46,6 +46,13 @@ describe("workflow late-order-notifications", () => {
     const result = await sendPreparedLateOrderNotifications(ctx, principals.support, run.runId);
     expect(result.skipped).toMatchObject([{ customerId: 1, reason: expect.stringContaining("limite") }]);
     expect(result.sent).toHaveLength(run.customerCount - 1);
+  });
+
+  it("preparar de novo reaproveita a execução pendente e diz de quem ela é", async () => {
+    const first = await prepareLateOrderNotifications(ctx, principals.manager);
+    const second = await prepareLateOrderNotifications(ctx, principals.support);
+    expect(first).toMatchObject({ reusedExistingRun: false, requestedBy: "Ana (gerente)" });
+    expect(second).toMatchObject({ runId: first.runId, reusedExistingRun: true, requestedBy: "Ana (gerente)" });
   });
 
   it("viewer não dispara o workflow", async () => {
