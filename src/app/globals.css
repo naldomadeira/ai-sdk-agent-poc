@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f6f6f3;
+  --surface: #ffffff;
+  --foreground: #1b1b18;
+  --muted: #6b6b63;
+  --border: #e3e2dc;
+  --accent: #1f5c4a;
+  --accent-soft: #e5efe9;
+  --warn: #8a5a00;
+  --warn-soft: #fbf1dc;
+  --danger: #a3261b;
+  --danger-soft: #f9e4e1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #121210;
+    --surface: #1b1b18;
+    --foreground: #ecebe6;
+    --muted: #9a998f;
+    --border: #2d2c28;
+    --accent: #7cc7a8;
+    --accent-soft: #1d2c26;
+    --warn: #e4b55a;
+    --warn-soft: #2e2615;
+    --danger: #f08c80;
+    --danger-soft: #331b18;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Markdown das respostas do agente */
+.prose-agent p { margin: 0.4rem 0; }
+.prose-agent ul, .prose-agent ol { margin: 0.4rem 0; padding-left: 1.25rem; list-style: disc; }
+.prose-agent ol { list-style: decimal; }
+.prose-agent table { border-collapse: collapse; margin: 0.5rem 0; font-size: 0.85rem; }
+.prose-agent th, .prose-agent td { border: 1px solid var(--border); padding: 0.25rem 0.6rem; text-align: left; }
+.prose-agent th { background: var(--background); font-weight: 600; }
+.prose-agent code { font-family: var(--font-mono); font-size: 0.85em; }
+.prose-agent strong { font-weight: 600; }
